@@ -28,9 +28,14 @@ st.title("💳 CreditGuard: Uçtan Uca Kredi Risk ve Portföy Analitiği")
 # -------------------------
 # Load Dataset
 # -------------------------
+
 @st.cache_data
 def load_data():
-    return pd.read_csv("data/credit_risk_dataset.csv")
+    return pd.read_csv("credit_risk_dataset.csv")
+    # veya:
+    # return pd.read_csv("data/credit_risk_dataset.csv")
+
+df = load_data()
 
 # -------------------------
 # Feature Engineering
