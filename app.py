@@ -1,7 +1,6 @@
 # =========================
 # CreditGuard Streamlit App
 # =========================
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -9,10 +8,7 @@ import numpy as np
 # Visualization
 import matplotlib.pyplot as plt
 import seaborn as sns
-try:
-    import plotly.express as px
-except ImportError:
-    st.error("Plotly yüklenmemiş. requirements.txt kontrol edin.")
+import plotly.express as px
 
 # ML
 from sklearn.model_selection import train_test_split
