@@ -9,7 +9,10 @@ import numpy as np
 # Visualization
 import matplotlib.pyplot as plt
 import seaborn as sns
-import plotly.express as px
+try:
+    import plotly.express as px
+except ImportError:
+    st.error("Plotly yüklenmemiş. requirements.txt kontrol edin.")
 
 # ML
 from sklearn.model_selection import train_test_split
