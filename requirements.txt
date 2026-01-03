@@ -7,3 +7,4 @@ shap
 matplotlib
 seaborn
 plotly
+plotly-express
