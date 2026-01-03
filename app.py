@@ -1,6 +1,6 @@
-# =========================
-# CreditGuard Streamlit App
-# =========================
+# =====================================================
+# CreditGuard: End-to-End Credit Risk & Portfolio Analytics
+# =====================================================
 
 import streamlit as st
 import pandas as pd
@@ -10,49 +10,68 @@ import numpy as np
 import matplotlib.pyplot as plt
 import plotly.express as px
 
-# ML
+# Machine Learning
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score
 import lightgbm as lgb
 
-# Explainability
+# Model Explainability
 import shap
 
-# -------------------------
-# Streamlit Config
-# -------------------------
-st.set_page_config(page_title="CreditGuard | Risk Management", layout="wide")
-st.title("💳 CreditGuard: Uçtan Uca Kredi Risk ve Portföy Analitiği")
+# -----------------------------------------------------
+# Streamlit Configuration
+# -----------------------------------------------------
+st.set_page_config(
+    page_title="CreditGuard | Credit Risk Management",
+    layout="wide"
+)
 
-# -------------------------
+st.title("💳 CreditGuard: End-to-End Credit Risk & Portfolio Analytics")
+st.markdown(
+    """
+    This application provides **individual credit scoring**, 
+    **portfolio-level risk monitoring**, and **stress testing** 
+    using a Probability of Default (PD) model.
+    """
+)
+
+# -----------------------------------------------------
 # Load Dataset
-# -------------------------
+# -----------------------------------------------------
 @st.cache_data
 def load_data():
     return pd.read_csv("credit_risk_dataset.csv")
 
 df = load_data()
 
-# -------------------------
-# Target & Feature Setup
-# -------------------------
-TARGET = "loan_status"
+# -----------------------------------------------------
+# Target & Feature Configuration
+# -----------------------------------------------------
+TARGET = "loan_status"  # 1 = Default, 0 = Non-default
 
-# Kategorik kolonları otomatik bul
+# Automatically detect categorical features
 categorical_cols = df.select_dtypes(include=["object"]).columns.tolist()
 categorical_cols = [c for c in categorical_cols if c != TARGET]
 
 # One-Hot Encoding
-df_encoded = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
+df_encoded = pd.get_dummies(
+    df,
+    columns=categorical_cols,
+    drop_first=True
+)
 
 X = df_encoded.drop(TARGET, axis=1)
 y = df_encoded[TARGET]
 
-# -------------------------
-# Train PD Model
-# -------------------------
+# -----------------------------------------------------
+# Train Probability of Default (PD) Model
+# -----------------------------------------------------
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.25, random_state=42, stratify=y
+    X,
+    y,
+    test_size=0.25,
+    random_state=42,
+    stratify=y
 )
 
 model = lgb.LGBMClassifier(
@@ -69,111 +88,156 @@ model.fit(X_train, y_train)
 pd_test = model.predict_proba(X_test)[:, 1]
 auc = roc_auc_score(y_test, pd_test)
 
-# -------------------------
+# -----------------------------------------------------
 # Expected Loss Function
-# -------------------------
-def calculate_el(pd, lgd, ead):
+# -----------------------------------------------------
+def calculate_expected_loss(pd, lgd, ead):
+    """
+    Expected Loss = PD × LGD × EAD
+    """
     return pd * lgd * ead
 
-# -------------------------
+# -----------------------------------------------------
 # Tabs
-# -------------------------
+# -----------------------------------------------------
 tab1, tab2, tab3 = st.tabs([
-    "🧍 Bireysel Skorlama (Underwriting)",
-    "📊 Portföy Analizi",
-    "⚠️ Stres Testi"
+    "👤 Individual Credit Scoring",
+    "📊 Portfolio Analytics",
+    "⚠️ Stress Testing"
 ])
 
-# ======================================================
-# TAB 1 – INDIVIDUAL CREDIT SCORING
-# ======================================================
+# =====================================================
+# TAB 1 — INDIVIDUAL CREDIT SCORING (UNDERWRITING)
+# =====================================================
 with tab1:
-    st.subheader("Bireysel Müşteri Kredi Riski")
+    st.subheader("Individual Credit Risk Assessment")
 
-    customer_id = st.selectbox("Müşteri Seç", X.index)
-    customer = X.loc[[customer_id]]
+    customer_id = st.selectbox(
+        "Select Customer ID",
+        X.index
+    )
 
-    pd_score = model.predict_proba(customer)[0, 1]
+    customer_data = X.loc[[customer_id]]
+    pd_score = model.predict_proba(customer_data)[0, 1]
 
-    lgd = st.slider("LGD (Loss Given Default)", 0.1, 1.0, 0.45)
-    ead = st.number_input("EAD (Exposure at Default)", value=100_000)
+    lgd = st.slider(
+        "Loss Given Default (LGD)",
+        min_value=0.1,
+        max_value=1.0,
+        value=0.45
+    )
 
-    el = calculate_el(pd_score, lgd, ead)
+    ead = st.number_input(
+        "Exposure at Default (EAD)",
+        value=100_000
+    )
+
+    expected_loss = calculate_expected_loss(
+        pd_score,
+        lgd,
+        ead
+    )
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("PD", f"{pd_score:.2%}")
-    col2.metric("Expected Loss", f"{el:,.0f} ₺")
+    col1.metric("Probability of Default (PD)", f"{pd_score:.2%}")
+    col2.metric("Expected Loss", f"{expected_loss:,.0f}")
     col3.metric("Model AUC", f"{auc:.3f}")
 
+    # Credit Decision Logic
     if pd_score < 0.05:
-        st.success("✅ KREDİ ONAY")
+        st.success("✅ CREDIT APPROVED")
     elif pd_score < 0.15:
-        st.warning("⚠️ İNCELEME GEREKİYOR")
+        st.warning("⚠️ MANUAL REVIEW REQUIRED")
     else:
-        st.error("❌ KREDİ RED")
+        st.error("❌ CREDIT REJECTED")
 
     # SHAP Explainability
-    st.subheader("📌 Neden Bu Skoru Aldı?")
+    st.subheader("Why did this customer receive this score?")
 
     explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(customer)
+    shap_values = explainer.shap_values(customer_data)
 
     fig, ax = plt.subplots()
     shap.waterfall_plot(
         shap.Explanation(
             values=shap_values[1][0],
             base_values=explainer.expected_value[1],
-            feature_names=customer.columns,
-            data=customer.values[0]
+            feature_names=customer_data.columns,
+            data=customer_data.values[0]
         ),
         show=False
     )
     st.pyplot(fig)
 
-# ======================================================
-# TAB 2 – PORTFOLIO ANALYSIS
-# ======================================================
+# =====================================================
+# TAB 2 — PORTFOLIO ANALYTICS
+# =====================================================
 with tab2:
-    st.subheader("Portföy Genel Görünümü")
+    st.subheader("Portfolio Risk Overview")
 
     df_portfolio = X.copy()
     df_portfolio["PD"] = model.predict_proba(X)[:, 1]
     df_portfolio["LGD"] = 0.45
-    df_portfolio["EAD"] = np.random.randint(50_000, 300_000, len(df_portfolio))
-    df_portfolio["EL"] = calculate_el(
+    df_portfolio["EAD"] = np.random.randint(
+        50_000,
+        300_000,
+        len(df_portfolio)
+    )
+
+    df_portfolio["Expected_Loss"] = calculate_expected_loss(
         df_portfolio["PD"],
         df_portfolio["LGD"],
         df_portfolio["EAD"]
     )
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Toplam Expected Loss", f"{df_portfolio['EL'].sum():,.0f} ₺")
-    col2.metric("Ortalama PD", f"{df_portfolio['PD'].mean():.2%}")
-    col3.metric("Default Oranı", f"{y.mean():.2%}")
+    col1.metric(
+        "Total Expected Loss",
+        f"{df_portfolio['Expected_Loss'].sum():,.0f}"
+    )
+    col2.metric(
+        "Average PD",
+        f"{df_portfolio['PD'].mean():.2%}"
+    )
+    col3.metric(
+        "Default Rate",
+        f"{y.mean():.2%}"
+    )
 
-    # Risk Segmentasyonu
+    # Risk Segmentation
     df_portfolio["Risk Segment"] = pd.cut(
         df_portfolio["PD"],
         bins=[0, 0.05, 0.15, 1],
-        labels=["Düşük", "Orta", "Yüksek"]
+        labels=["Low Risk", "Medium Risk", "High Risk"]
     )
 
     fig = px.histogram(
         df_portfolio,
         x="PD",
         color="Risk Segment",
-        title="Risk Segmentasyonu (PD Dağılımı)"
+        title="Portfolio Risk Segmentation (PD Distribution)"
     )
     st.plotly_chart(fig, use_container_width=True)
 
-# ======================================================
-# TAB 3 – STRESS TESTING
-# ======================================================
+# =====================================================
+# TAB 3 — STRESS TESTING
+# =====================================================
 with tab3:
-    st.subheader("Makroekonomik Stres Testi")
+    st.subheader("Macroeconomic Stress Testing")
 
-    inflation_shock = st.slider("Enflasyon Artışı (%)", 0, 20, 5)
-    unemployment_shock = st.slider("İşsizlik Artışı (%)", 0, 10, 3)
+    inflation_shock = st.slider(
+        "Inflation Increase (%)",
+        0,
+        20,
+        5
+    )
+
+    unemployment_shock = st.slider(
+        "Unemployment Increase (%)",
+        0,
+        10,
+        3
+    )
 
     stress_multiplier = 1 + inflation_shock / 100 + unemployment_shock / 100
 
@@ -183,22 +247,30 @@ with tab3:
         0,
         1
     )
-    df_stress["EL_Stressed"] = calculate_el(
+
+    df_stress["Expected_Loss_Stressed"] = calculate_expected_loss(
         df_stress["PD_Stressed"],
         df_stress["LGD"],
         df_stress["EAD"]
     )
 
     col1, col2 = st.columns(2)
-    col1.metric("Baz EL", f"{df_portfolio['EL'].sum():,.0f} ₺")
-    col2.metric("Stresli EL", f"{df_stress['EL_Stressed'].sum():,.0f} ₺")
+    col1.metric(
+        "Base Scenario Expected Loss",
+        f"{df_portfolio['Expected_Loss'].sum():,.0f}"
+    )
+    col2.metric(
+        "Stressed Scenario Expected Loss",
+        f"{df_stress['Expected_Loss_Stressed'].sum():,.0f}"
+    )
 
     fig = px.bar(
-        x=["Baz Senaryo", "Stres Senaryosu"],
+        x=["Base Scenario", "Stressed Scenario"],
         y=[
-            df_portfolio["EL"].sum(),
-            df_stress["EL_Stressed"].sum()
+            df_portfolio["Expected_Loss"].sum(),
+            df_stress["Expected_Loss_Stressed"].sum()
         ],
-        title="Beklenen Zarar Karşılaştırması"
+        title="Expected Loss Comparison: Base vs Stress Scenario"
     )
+
     st.plotly_chart(fig, use_container_width=True)
