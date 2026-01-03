@@ -1,18 +1,17 @@
 # =========================
 # CreditGuard Streamlit App
 # =========================
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 
 # Visualization
 import matplotlib.pyplot as plt
-import seaborn as sns
 import plotly.express as px
 
 # ML
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import roc_auc_score
 import lightgbm as lgb
 
@@ -28,27 +27,26 @@ st.title("💳 CreditGuard: Uçtan Uca Kredi Risk ve Portföy Analitiği")
 # -------------------------
 # Load Dataset
 # -------------------------
-
 @st.cache_data
 def load_data():
     return pd.read_csv("credit_risk_dataset.csv")
-    # veya:
-    # return pd.read_csv("data/credit_risk_dataset.csv")
 
 df = load_data()
 
 # -------------------------
-# Feature Engineering
+# Target & Feature Setup
 # -------------------------
-TARGET = "default"
+TARGET = "loan_status"
 
-categorical_cols = ["sector", "region"]
-numerical_cols = [c for c in df.columns if c not in categorical_cols + [TARGET]]
+# Kategorik kolonları otomatik bul
+categorical_cols = df.select_dtypes(include=["object"]).columns.tolist()
+categorical_cols = [c for c in categorical_cols if c != TARGET]
 
-df = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
+# One-Hot Encoding
+df_encoded = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
 
-X = df.drop(TARGET, axis=1)
-y = df[TARGET]
+X = df_encoded.drop(TARGET, axis=1)
+y = df_encoded[TARGET]
 
 # -------------------------
 # Train PD Model
@@ -67,12 +65,12 @@ model = lgb.LGBMClassifier(
 )
 
 model.fit(X_train, y_train)
-pd_test = model.predict_proba(X_test)[:, 1]
 
+pd_test = model.predict_proba(X_test)[:, 1]
 auc = roc_auc_score(y_test, pd_test)
 
 # -------------------------
-# Expected Loss Functions
+# Expected Loss Function
 # -------------------------
 def calculate_el(pd, lgd, ead):
     return pd * lgd * ead
@@ -97,8 +95,8 @@ with tab1:
 
     pd_score = model.predict_proba(customer)[0, 1]
 
-    lgd = st.slider("LGD (Teminat Sonrası Kayıp Oranı)", 0.1, 1.0, 0.45)
-    ead = st.number_input("EAD (Kalan Anapara)", value=100000)
+    lgd = st.slider("LGD (Loss Given Default)", 0.1, 1.0, 0.45)
+    ead = st.number_input("EAD (Exposure at Default)", value=100_000)
 
     el = calculate_el(pd_score, lgd, ead)
 
@@ -116,6 +114,7 @@ with tab1:
 
     # SHAP Explainability
     st.subheader("📌 Neden Bu Skoru Aldı?")
+
     explainer = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(customer)
 
@@ -150,9 +149,9 @@ with tab2:
     col1, col2, col3 = st.columns(3)
     col1.metric("Toplam Expected Loss", f"{df_portfolio['EL'].sum():,.0f} ₺")
     col2.metric("Ortalama PD", f"{df_portfolio['PD'].mean():.2%}")
-    col3.metric("Batık Oranı", f"{y.mean():.2%}")
+    col3.metric("Default Oranı", f"{y.mean():.2%}")
 
-    # Risk Segmentation
+    # Risk Segmentasyonu
     df_portfolio["Risk Segment"] = pd.cut(
         df_portfolio["PD"],
         bins=[0, 0.05, 0.15, 1],
@@ -173,7 +172,7 @@ with tab2:
 with tab3:
     st.subheader("Makroekonomik Stres Testi")
 
-    inflation_shock = st.slider("Enflasyon Şoku (%)", 0, 20, 5)
+    inflation_shock = st.slider("Enflasyon Artışı (%)", 0, 20, 5)
     unemployment_shock = st.slider("İşsizlik Artışı (%)", 0, 10, 3)
 
     stress_multiplier = 1 + inflation_shock / 100 + unemployment_shock / 100
@@ -194,11 +193,12 @@ with tab3:
     col1.metric("Baz EL", f"{df_portfolio['EL'].sum():,.0f} ₺")
     col2.metric("Stresli EL", f"{df_stress['EL_Stressed'].sum():,.0f} ₺")
 
-    fig = px.line(
-        pd.DataFrame({
-            "Normal": df_portfolio["EL"],
-            "Stres": df_stress["EL_Stressed"]
-        }).mean(),
-        title="Stres Senaryosu EL Karşılaştırması"
+    fig = px.bar(
+        x=["Baz Senaryo", "Stres Senaryosu"],
+        y=[
+            df_portfolio["EL"].sum(),
+            df_stress["EL_Stressed"].sum()
+        ],
+        title="Beklenen Zarar Karşılaştırması"
     )
     st.plotly_chart(fig, use_container_width=True)
