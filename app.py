@@ -151,28 +151,53 @@ with tab1:
     else:
         st.error("❌ CREDIT REJECTED")
 
-    # SHAP Explainability
+    # SHAP Explainability 
     st.subheader("Why did this customer receive this score?")
-    
     explainer = shap.TreeExplainer(model)
-shap_values = explainer(customer_data)
+    shap_exp = explainer(customer_data)
+ 
+    # Create SHAP DataFrame
+    shap_df = pd.DataFrame({
+    "Feature": customer_data.columns,
+    "SHAP Value": shap_exp.values[0]
+    })
+    
+    # Take top 10 most impactful features 
+shap_df["Abs_SHAP"] = shap_df["SHAP Value"].abs()
+shap_df = shap_df.sort_values("Abs_SHAP", ascending=False).head(10)
 
-fig, ax = plt.subplots()
-shap.waterfall_plot(
-    shap.Explanation(
-        values=shap_values.values[0],
-        base_values=shap_values.base_values[0],
-        feature_names=customer_data.columns,
-        data=customer_data.values[0]
-    ),
-    show=False
+# Positive / Negative effect
+shap_df["Impact"] = np.where(
+    shap_df["SHAP Value"] > 0,
+    "Increases PD",
+    "Decreases PD"
 )
 
-st.pyplot(fig)
+# Plotly bar chart
+fig = px.bar(
+    shap_df.sort_values("SHAP Value"),
+    x="SHAP Value",
+    y="Feature",
+    orientation="h",
+    color="Impact",
+    title="Top Factors Influencing This Customer's PD",
+    labels={
+        "SHAP Value": "Impact on PD",
+        "Feature": "Feature"
+    }
+)
+
+fig.update_layout(
+    height=500,
+    title_x=0.5
+)
+
+st.plotly_chart(fig, use_container_width=True)
 
 # =====================================================
 # TAB 2 — PORTFOLIO ANALYTICS
 # =====================================================
+
 with tab2:
     st.subheader("Portfolio Risk Overview")
 
