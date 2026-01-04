@@ -1,6 +1,4 @@
-# =====================================================
 # CreditGuard: End-to-End Credit Risk & Portfolio Analytics
-# =====================================================
 
 import streamlit as st
 import pandas as pd
@@ -18,9 +16,8 @@ import lightgbm as lgb
 # Model Explainability
 import shap
 
-# -----------------------------------------------------
 # Streamlit Configuration
-# -----------------------------------------------------
+
 st.set_page_config(
     page_title="CreditGuard | Credit Risk Management",
     layout="wide"
@@ -35,18 +32,16 @@ st.markdown(
     """
 )
 
-# -----------------------------------------------------
-# Load Dataset
-# -----------------------------------------------------
+# Dataset
+
 @st.cache_data
 def load_data():
     return pd.read_csv("credit_risk_dataset.csv")
 
 df = load_data()
 
-# -----------------------------------------------------
 # Target & Feature Configuration
-# -----------------------------------------------------
+
 TARGET = "loan_status"  # 1 = Default, 0 = Non-default
 
 # Automatically detect categorical features
@@ -63,9 +58,8 @@ df_encoded = pd.get_dummies(
 X = df_encoded.drop(TARGET, axis=1)
 y = df_encoded[TARGET]
 
-# -----------------------------------------------------
+
 # Train Probability of Default (PD) Model
-# -----------------------------------------------------
 X_train, X_test, y_train, y_test = train_test_split(
     X,
     y,
@@ -88,27 +82,24 @@ model.fit(X_train, y_train)
 pd_test = model.predict_proba(X_test)[:, 1]
 auc = roc_auc_score(y_test, pd_test)
 
-# -----------------------------------------------------
+
 # Expected Loss Function
-# -----------------------------------------------------
 def calculate_expected_loss(pd, lgd, ead):
     """
     Expected Loss = PD × LGD × EAD
     """
     return pd * lgd * ead
 
-# -----------------------------------------------------
+
 # Tabs
-# -----------------------------------------------------
 tab1, tab2, tab3 = st.tabs([
     "👤 Individual Credit Scoring",
     "📊 Portfolio Analytics",
     "⚠️ Stress Testing"
 ])
 
-# =====================================================
-# TAB 1 — INDIVIDUAL CREDIT SCORING (UNDERWRITING)
-# =====================================================
+
+# TAB 1 — INDIVIDUAL CREDIT SCORING  
 with tab1:
     st.subheader("Individual Credit Risk Assessment")
 
@@ -163,18 +154,18 @@ with tab1:
     })
     
     # Take top 10 most impactful features 
-shap_df["Abs_SHAP"] = shap_df["SHAP Value"].abs()
-shap_df = shap_df.sort_values("Abs_SHAP", ascending=False).head(10)
+    shap_df["Abs_SHAP"] = shap_df["SHAP Value"].abs()
+    shap_df = shap_df.sort_values("Abs_SHAP", ascending=False).head(10)
 
-# Positive / Negative effect
-shap_df["Impact"] = np.where(
+    # Positive / Negative effect
+    shap_df["Impact"] = np.where(
     shap_df["SHAP Value"] > 0,
     "Increases PD",
     "Decreases PD"
-)
+    )
 
-# Plotly bar chart
-fig = px.bar(
+    # Plotly bar chart
+    fig = px.bar(
     shap_df.sort_values("SHAP Value"),
     x="SHAP Value",
     y="Feature",
@@ -194,10 +185,8 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
-# =====================================================
-# TAB 2 — PORTFOLIO ANALYTICS
-# =====================================================
 
+# TAB 2 — PORTFOLIO ANALYTICS
 with tab2:
     st.subheader("Portfolio Risk Overview")
 
@@ -245,9 +234,8 @@ with tab2:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-# =====================================================
+
 # TAB 3 — STRESS TESTING
-# =====================================================
 with tab3:
     st.subheader("Macroeconomic Stress Testing")
 
