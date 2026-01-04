@@ -153,21 +153,22 @@ with tab1:
 
     # SHAP Explainability
     st.subheader("Why did this customer receive this score?")
-
+    
     explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(customer_data)
+shap_values = explainer(customer_data)
 
-    fig, ax = plt.subplots()
-    shap.waterfall_plot(
-        shap.Explanation(
-            values=shap_values[1][0],
-            base_values=explainer.expected_value[1],
-            feature_names=customer_data.columns,
-            data=customer_data.values[0]
-        ),
-        show=False
-    )
-    st.pyplot(fig)
+fig, ax = plt.subplots()
+shap.waterfall_plot(
+    shap.Explanation(
+        values=shap_values.values[0],
+        base_values=shap_values.base_values[0],
+        feature_names=customer_data.columns,
+        data=customer_data.values[0]
+    ),
+    show=False
+)
+
+st.pyplot(fig)
 
 # =====================================================
 # TAB 2 — PORTFOLIO ANALYTICS
