@@ -92,10 +92,11 @@ def calculate_expected_loss(pd, lgd, ead):
 
 
 # Tabs
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "👤 Individual Credit Scoring",
     "📊 Portfolio Analytics",
-    "⚠️ Stress Testing"
+    "⚠️ Stress Testing",
+    "🆕 New Customer Evaluation"
 ])
 
 
@@ -288,3 +289,109 @@ with tab3:
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+
+# TAB 4 — NEW CUSTOMER EVALUATION (USER INPUT)
+
+with tab4:
+    st.subheader("New Customer Credit Evaluation")
+
+    st.markdown(
+        "Enter customer information to evaluate **Probability of Default (PD)**, "
+        "**Expected Loss (EL)** and credit decision."
+    )
+
+
+    # User Inputs
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        person_age = st.number_input("Age", 18, 100, 35)
+        person_income = st.number_input("Annual Income", 0, 1_000_000, 50_000)
+        person_emp_length = st.number_input("Employment Length (Years)", 0, 50, 5)
+
+    with col2:
+        loan_amnt = st.number_input("Loan Amount", 1_000, 1_000_000, 100_000)
+        loan_int_rate = st.number_input("Interest Rate (%)", 0.0, 40.0, 12.5)
+        loan_percent_income = loan_amnt / max(person_income, 1)
+
+    with col3:
+        cb_person_cred_hist_length = st.number_input(
+            "Credit History Length (Years)", 0, 50, 10
+        )
+
+    person_home_ownership = st.selectbox(
+        "Home Ownership",
+        ["RENT", "OWN", "MORTGAGE", "OTHER"]
+    )
+
+    loan_intent = st.selectbox(
+        "Loan Purpose",
+        ["EDUCATION", "MEDICAL", "VENTURE", "PERSONAL", "HOMEIMPROVEMENT", "DEBTCONSOLIDATION"]
+    )
+
+    loan_grade = st.selectbox(
+        "Loan Grade",
+        ["A", "B", "C", "D", "E", "F", "G"]
+    )
+
+    cb_person_default_on_file = st.selectbox(
+        "Previous Default on File?",
+        ["Y", "N"]
+    )
+
+    lgd = st.slider(
+        "Loss Given Default (LGD)",
+        0.1,
+        1.0,
+        0.45
+    )
+
+    ead = st.number_input(
+        "Exposure at Default (EAD)",
+        value=loan_amnt
+    )
+
+   
+    # Prepare Input for Model
+    
+    user_input = {
+        "person_age": person_age,
+        "person_income": person_income,
+        "person_emp_length": person_emp_length,
+        "loan_amnt": loan_amnt,
+        "loan_int_rate": loan_int_rate,
+        "loan_percent_income": loan_percent_income,
+        "cb_person_cred_hist_length": cb_person_cred_hist_length,
+        "person_home_ownership": person_home_ownership,
+        "loan_intent": loan_intent,
+        "loan_grade": loan_grade,
+        "cb_person_default_on_file": cb_person_default_on_file
+    }
+
+    user_df = pd.DataFrame([user_input])
+    user_df = pd.get_dummies(user_df)
+
+    # Align columns with training data
+    user_df = user_df.reindex(columns=X.columns, fill_value=0)
+
+    # Prediction
+ 
+    if st.button("Evaluate Credit Risk"):
+        pd_score = model.predict_proba(user_df)[0, 1]
+        expected_loss = calculate_expected_loss(pd_score, lgd, ead)
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Probability of Default (PD)", f"{pd_score:.2%}")
+        col2.metric("Expected Loss", f"{expected_loss:,.0f}")
+        col3.metric("Model AUC", f"{auc:.3f}")
+
+        # Decision Logic
+        if pd_score < 0.05:
+            st.success("✅ CREDIT APPROVED")
+        elif pd_score < 0.15:
+            st.warning("⚠️ MANUAL REVIEW REQUIRED")
+        else:
+            st.error("❌ CREDIT REJECTED")
+
