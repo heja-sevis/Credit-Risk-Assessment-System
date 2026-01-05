@@ -247,11 +247,83 @@ with tab3:
     st.plotly_chart(fig, use_container_width=True)
 
 # ==============================================================================
-# TAB 4 — NEW CUSTOMER
+# TAB 4 — NEW CUSTOMER (Enhanced Decision Support)
 # ==============================================================================
 with tab4:
     st.subheader("New Customer Credit Evaluation")
 
+    # -------------------------------
+    # Decision explanation function
+    # -------------------------------
+    def decision_explanation(pd):
+        if pd < 0.05:
+            return (
+                "Müşterinin temerrüt olasılığı düşüktür. "
+                "Gelir seviyesi, kredi tutarı ve kredi geçmişi dengeli görünmektedir. "
+                "Mevcut koşullarda kredi verilmesi düşük risklidir."
+            )
+        elif pd < 0.15:
+            return (
+                "Müşteri orta risk grubundadır. "
+                "Geri ödeme kapasitesi sınırdadır ve "
+                "küçük ekonomik veya finansal değişiklikler riski artırabilir. "
+                "Manuel inceleme önerilir."
+            )
+        else:
+            return (
+                "Müşterinin temerrüt olasılığı yüksektir. "
+                "Mevcut gelir seviyesi ve kredi yükü geri ödeme açısından yetersiz görünmektedir. "
+                "Bu koşullarda kredi verilmesi yüksek risk taşır."
+            )
+
+    # -------------------------------
+    # Scenario simulation
+    # -------------------------------
+    def simulate_scenarios(base_user, model, X_columns, lgd):
+
+        scenarios = [
+            ("Base Case", 1.0, 1.0, 1.0),
+            ("Income -10%", 0.9, 1.0, 1.0),
+            ("Loan +20%", 1.0, 1.2, 1.0),
+            ("Interest Rate +5%", 1.0, 1.0, 1.05),
+            ("Income -10% & Loan +20%", 0.9, 1.2, 1.0),
+        ]
+
+        results = []
+
+        for name, inc_m, loan_m, rate_m in scenarios:
+            user = base_user.copy()
+
+            user["person_income"] *= inc_m
+            user["loan_amnt"] *= loan_m
+            user["loan_int_rate"] *= rate_m
+            user["loan_percent_income"] = (
+                user["loan_amnt"] / max(user["person_income"], 1)
+            )
+
+            df_user = pd.DataFrame([user])
+            df_user = pd.get_dummies(df_user)
+            df_user = df_user.reindex(columns=X_columns, fill_value=0)
+
+            pd_s = model.predict_proba(df_user)[0, 1]
+            el_s = pd_s * lgd * user["loan_amnt"]
+
+            results.append({
+                "Scenario": name,
+                "PD (%)": round(pd_s * 100, 2),
+                "Expected Loss": round(el_s, 0),
+                "Decision": (
+                    "APPROVE" if pd_s < 0.05 else
+                    "REVIEW" if pd_s < 0.15 else
+                    "REJECT"
+                )
+            })
+
+        return pd.DataFrame(results)
+
+    # -------------------------------
+    # Input Form
+    # -------------------------------
     with st.form("new_customer"):
         col1, col2, col3 = st.columns(3)
 
@@ -271,14 +343,19 @@ with tab4:
         home = st.selectbox("Home Ownership", ["RENT", "OWN", "MORTGAGE", "OTHER"])
         intent = st.selectbox(
             "Loan Purpose",
-            ["EDUCATION", "MEDICAL", "VENTURE", "PERSONAL", "HOMEIMPROVEMENT", "DEBTCONSOLIDATION"]
+            ["EDUCATION", "MEDICAL", "VENTURE", "PERSONAL",
+             "HOMEIMPROVEMENT", "DEBTCONSOLIDATION"]
         )
         grade = st.selectbox("Loan Grade", list("ABCDEFG"))
         default = st.selectbox("Previous Default?", ["Y", "N"])
 
-        lgd = st.slider("LGD", 0.1, 1.0, 0.45)
-        submit = st.form_submit_button("Evaluate")
+        lgd = st.slider("Loss Given Default (LGD)", 0.1, 1.0, 0.45)
 
+        submit = st.form_submit_button("Evaluate Credit Risk")
+
+    # -------------------------------
+    # Evaluation Results
+    # -------------------------------
     if submit:
         user = {
             "person_age": age,
@@ -301,12 +378,40 @@ with tab4:
         pd_score = model.predict_proba(user_df)[0, 1]
         el = expected_loss(pd_score, lgd, loan)
 
-        st.metric("Probability of Default", f"{pd_score:.2%}")
-        st.metric("Expected Loss", f"{el:,.0f}")
+        col1, col2 = st.columns(2)
+        col1.metric("Probability of Default", f"{pd_score:.2%}")
+        col2.metric("Expected Loss", f"{el:,.0f}")
 
+        # Decision badge
         if pd_score < 0.05:
-            st.success("✅ APPROVED")
+            st.success("✅ CREDIT APPROVED")
         elif pd_score < 0.15:
-            st.warning("⚠️ REVIEW REQUIRED")
+            st.warning("⚠️ MANUAL REVIEW REQUIRED")
         else:
-            st.error("❌ REJECTED")
+            st.error("❌ CREDIT REJECTED")
+
+        # Explanation
+        st.markdown("### 📌 Decision Explanation")
+        st.write(decision_explanation(pd_score))
+
+        # Scenario analysis
+        st.markdown("### 🔍 What-if Scenario Analysis")
+
+        scenario_df = simulate_scenarios(
+            user,
+            model,
+            X.columns,
+            lgd
+        )
+
+        st.dataframe(scenario_df, use_container_width=True)
+
+        # Optional visualization
+        fig = px.bar(
+            scenario_df,
+            x="Scenario",
+            y="PD (%)",
+            title="PD Change Across Scenarios"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
