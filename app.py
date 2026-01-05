@@ -31,8 +31,10 @@ df = load_data()
 
 TARGET = "loan_status"
 
-categorical_cols = df.select_dtypes(include="object").columns.tolist()
-categorical_cols.remove(TARGET)
+categorical_cols = [
+    c for c in df.select_dtypes(include="object").columns
+    if c != TARGET
+]
 
 # ------------------------------------------------------------------------------
 # MODEL TRAINING (CACHED)
