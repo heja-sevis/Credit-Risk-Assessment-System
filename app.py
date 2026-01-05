@@ -4,6 +4,7 @@ import numpy as np
 import lightgbm as lgb
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score
+import plotly.express as px
 
 # =====================================================
 # Page Config
@@ -21,13 +22,12 @@ def load_data():
     return pd.read_csv("credit_risk_dataset.csv")
 
 df = load_data()
-
 TARGET = "loan_status"
 
 # =====================================================
 # Preprocessing
 # =====================================================
-categorical_cols = df.select_dtypes(include=["object"]).columns.tolist()
+categorical_cols = df.select_dtypes(include="object").columns.tolist()
 categorical_cols = [c for c in categorical_cols if c != TARGET]
 
 df_encoded = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
@@ -41,7 +41,7 @@ y = df_encoded[TARGET]
 @st.cache_resource
 def train_model(X, y):
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.25, random_state=42, stratify=y
+        X, y, test_size=0.25, stratify=y, random_state=42
     )
 
     model = lgb.LGBMClassifier(
@@ -61,10 +61,11 @@ def train_model(X, y):
 model, auc = train_model(X, y)
 
 # =====================================================
-# Expected Loss Function
+# Helper Functions
 # =====================================================
 def calculate_expected_loss(pd, lgd, ead):
     return pd * lgd * ead
+
 
 # =====================================================
 # Tabs
@@ -77,132 +78,152 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # =====================================================
+# TAB 1 — INDIVIDUAL CREDIT SCORING
+# =====================================================
+with tab1:
+    st.header("Individual Credit Scoring")
+
+    customer_id = st.slider(
+        "Select Customer Index",
+        0,
+        len(df) - 1,
+        0,
+        key="cust_slider_tab1"
+    )
+
+    customer = df.iloc[[customer_id]]
+    customer_encoded = pd.get_dummies(customer)
+    customer_encoded = customer_encoded.reindex(columns=X.columns, fill_value=0)
+
+    pd_score = model.predict_proba(customer_encoded)[0, 1]
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Probability of Default (PD)", f"{pd_score:.2%}")
+    col2.metric("Loan Amount", f"{customer['loan_amnt'].values[0]:,.0f}")
+    col3.metric("Loan Grade", customer["loan_grade"].values[0])
+
+    if pd_score < 0.05:
+        st.success("✅ APPROVED")
+    elif pd_score < 0.15:
+        st.warning("⚠️ REVIEW REQUIRED")
+    else:
+        st.error("❌ REJECTED")
+
+# =====================================================
+# TAB 2 — PORTFOLIO ANALYTICS
+# =====================================================
+with tab2:
+    st.header("Portfolio Analytics")
+
+    df["PD"] = model.predict_proba(X)[:, 1]
+    df["Expected_Loss"] = df["PD"] * 0.45 * df["loan_amnt"]
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Expected Loss", f"{df['Expected_Loss'].sum():,.0f}")
+    col2.metric("Average PD", f"{df['PD'].mean():.2%}")
+    col3.metric("Default Rate", f"{df[TARGET].mean():.2%}")
+
+    fig = px.histogram(
+        df,
+        x="PD",
+        nbins=40,
+        title="PD Distribution"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# =====================================================
+# TAB 3 — STRESS TESTING
+# =====================================================
+with tab3:
+    st.header("Stress Testing")
+
+    stress_factor = st.slider(
+        "Macroeconomic Stress Factor",
+        1.0,
+        2.0,
+        1.2,
+        key="stress_slider_tab3"
+    )
+
+    stressed_pd = np.clip(df["PD"] * stress_factor, 0, 1)
+    stressed_el = stressed_pd * 0.45 * df["loan_amnt"]
+
+    col1, col2 = st.columns(2)
+    col1.metric("Baseline EL", f"{df['Expected_Loss'].sum():,.0f}")
+    col2.metric("Stressed EL", f"{stressed_el.sum():,.0f}")
+
+    fig = px.histogram(
+        stressed_pd,
+        nbins=40,
+        title="Stressed PD Distribution"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# =====================================================
 # TAB 4 — NEW CUSTOMER EVALUATION
 # =====================================================
 with tab4:
     st.header("New Customer Credit Evaluation")
 
-    st.markdown(
-        "Enter customer information below. "
-        "Click **Evaluate Credit Risk** to calculate "
-        "**Probability of Default (PD)**, **Expected Loss (EL)** "
-        "and the final credit decision."
-    )
-
-    # -------------------------
-    # User Input Section
-    # -------------------------
     with st.form("new_customer_form"):
-
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            person_age = st.number_input(
-                "Age", 18, 100, 35, key="age_tab4"
-            )
-            person_income = st.number_input(
-                "Annual Income", 0, 1_000_000, 50_000, key="income_tab4"
-            )
-            person_emp_length = st.number_input(
-                "Employment Length (Years)", 0, 50, 5, key="emp_tab4"
-            )
+            age = st.number_input("Age", 18, 100, 35, key="age4")
+            income = st.number_input("Annual Income", 0, 1_000_000, 50_000, key="inc4")
+            emp = st.number_input("Employment Length", 0, 50, 5, key="emp4")
 
         with col2:
-            loan_amnt = st.number_input(
-                "Loan Amount", 1_000, 1_000_000, 100_000, key="loan_amt_tab4"
-            )
-            loan_int_rate = st.number_input(
-                "Interest Rate (%)", 0.0, 40.0, 12.5, key="rate_tab4"
-            )
-            loan_percent_income = loan_amnt / max(person_income, 1)
+            loan = st.number_input("Loan Amount", 1_000, 1_000_000, 100_000, key="loan4")
+            rate = st.number_input("Interest Rate (%)", 0.0, 40.0, 12.5, key="rate4")
+            lpi = loan / max(income, 1)
 
         with col3:
-            cb_person_cred_hist_length = st.number_input(
-                "Credit History Length (Years)", 0, 50, 10, key="hist_tab4"
-            )
+            hist = st.number_input("Credit History Length", 0, 50, 10, key="hist4")
 
-        person_home_ownership = st.selectbox(
-            "Home Ownership",
-            ["RENT", "OWN", "MORTGAGE", "OTHER"],
-            key="home_tab4"
-        )
-
-        loan_intent = st.selectbox(
+        home = st.selectbox("Home Ownership", ["RENT", "OWN", "MORTGAGE", "OTHER"], key="home4")
+        intent = st.selectbox(
             "Loan Purpose",
-            [
-                "EDUCATION",
-                "MEDICAL",
-                "VENTURE",
-                "PERSONAL",
-                "HOMEIMPROVEMENT",
-                "DEBTCONSOLIDATION"
-            ],
-            key="intent_tab4"
+            ["EDUCATION", "MEDICAL", "VENTURE", "PERSONAL", "HOMEIMPROVEMENT", "DEBTCONSOLIDATION"],
+            key="intent4"
         )
+        grade = st.selectbox("Loan Grade", ["A", "B", "C", "D", "E", "F", "G"], key="grade4")
+        default = st.selectbox("Previous Default?", ["Y", "N"], key="def4")
 
-        loan_grade = st.selectbox(
-            "Loan Grade",
-            ["A", "B", "C", "D", "E", "F", "G"],
-            key="grade_tab4"
-        )
+        lgd = st.slider("LGD", 0.1, 1.0, 0.45, key="lgd4")
+        ead = st.number_input("EAD", value=loan, key="ead4")
 
-        cb_person_default_on_file = st.selectbox(
-            "Previous Default on File?",
-            ["Y", "N"],
-            key="default_tab4"
-        )
+        submit = st.form_submit_button("Evaluate Credit Risk")
 
-        lgd = st.slider(
-            "Loss Given Default (LGD)",
-            min_value=0.1,
-            max_value=1.0,
-            value=0.45,
-            key="lgd_tab4"
-        )
-
-        ead = st.number_input(
-            "Exposure at Default (EAD)",
-            value=loan_amnt,
-            key="ead_tab4"
-        )
-
-        submitted = st.form_submit_button("Evaluate Credit Risk")
-
-    # -------------------------
-    # Prediction (ONLY AFTER BUTTON)
-    # -------------------------
-    if submitted:
-        user_input = {
-            "person_age": person_age,
-            "person_income": person_income,
-            "person_emp_length": person_emp_length,
-            "loan_amnt": loan_amnt,
-            "loan_int_rate": loan_int_rate,
-            "loan_percent_income": loan_percent_income,
-            "cb_person_cred_hist_length": cb_person_cred_hist_length,
-            "person_home_ownership": person_home_ownership,
-            "loan_intent": loan_intent,
-            "loan_grade": loan_grade,
-            "cb_person_default_on_file": cb_person_default_on_file
+    if submit:
+        user = {
+            "person_age": age,
+            "person_income": income,
+            "person_emp_length": emp,
+            "loan_amnt": loan,
+            "loan_int_rate": rate,
+            "loan_percent_income": lpi,
+            "cb_person_cred_hist_length": hist,
+            "person_home_ownership": home,
+            "loan_intent": intent,
+            "loan_grade": grade,
+            "cb_person_default_on_file": default
         }
 
-        user_df = pd.DataFrame([user_input])
+        user_df = pd.DataFrame([user])
         user_df = pd.get_dummies(user_df)
         user_df = user_df.reindex(columns=X.columns, fill_value=0)
 
         pd_score = model.predict_proba(user_df)[0, 1]
-        expected_loss = calculate_expected_loss(pd_score, lgd, ead)
+        el = calculate_expected_loss(pd_score, lgd, ead)
 
-        st.divider()
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Probability of Default (PD)", f"{pd_score:.2%}")
-        col2.metric("Expected Loss", f"{expected_loss:,.0f}")
-        col3.metric("Model AUC", f"{auc:.3f}")
+        col1, col2 = st.columns(2)
+        col1.metric("Probability of Default", f"{pd_score:.2%}")
+        col2.metric("Expected Loss", f"{el:,.0f}")
 
         if pd_score < 0.05:
-            st.success("✅ CREDIT APPROVED")
+            st.success("✅ APPROVED")
         elif pd_score < 0.15:
-            st.warning("⚠️ MANUAL REVIEW REQUIRED")
+            st.warning("⚠️ REVIEW REQUIRED")
         else:
-            st.error("❌ CREDIT REJECTED")
+            st.error("❌ REJECTED")
