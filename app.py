@@ -103,7 +103,7 @@ def calculate_expected_loss(pd, lgd, ead):
 tab1, tab2, tab3, tab4= st.tabs([
     "👤 Individual Credit Scoring",
     "📊 Portfolio Analytics",
-    "⚠️ Stress Testing"
+    "⚠️ Stress Testing",
     "🆕 New Customer Evaluation"
 ])
 
